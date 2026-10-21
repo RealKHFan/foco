@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Only asked for when "Save location" is switched on. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Lets the gallery bubble show the newest photo in DCIM/Camera, also ones from other camera apps. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Foco never goes online. Make sure no library sneaks this in. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
+    <queries>
+        <!-- The gallery button hands photos to Google Photos first, like Pixel Camera. -->
+        <package android:name="com.google.android.apps.photos" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="image/*" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:largeHeap="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Theme.Foco"
+        tools:targetApi="36">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            tools:ignore="DiscouragedApi,LockedOrientationActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.VIDEO_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.IMAGE_CAPTURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.VIDEO_CAPTURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SecureCameraActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            tools:ignore="DiscouragedApi,LockedOrientationActivity">
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA_SECURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.IMAGE_CAPTURE_SECURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
