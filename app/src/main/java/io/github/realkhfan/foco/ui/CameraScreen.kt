@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.LocalFlorist
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.ModeNight
 import androidx.compose.material.icons.outlined.Panorama
+import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.ShutterSpeed
 import androidx.compose.material.icons.automirrored.outlined.DirectionsRun
 import androidx.compose.material.icons.outlined.Pause
@@ -141,7 +142,7 @@ fun CameraScreen(
     // Status bar is hidden (like Pixel Camera); keep clear of the camera cut-out.
     val statusTop = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val wide = state.kind == CaptureKind.VIDEO || settings.ratio == RatioSetting.WIDE_9_16
+    val wide = !state.scanning && (state.kind == CaptureKind.VIDEO || settings.ratio == RatioSetting.WIDE_9_16)
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         // 4:3 sits just above the shutter row so the zoom chips always overlap the picture (as on Pixel);
@@ -164,7 +165,7 @@ fun CameraScreen(
 
         BottomControls(state, settings, actions, iconRotation, Modifier.align(Alignment.BottomCenter))
 
-        if (state.viewerItems == null && !state.fullSettingsOpen) MessageToast(state)
+        if (state.viewerItems == null && !state.fullSettingsOpen && !state.scanReviewOpen && state.scanEdit == null) MessageToast(state)
 
         if (state.screenFlashOn) Box(Modifier.fillMaxSize().background(Color(0xFFFFF4E5)))
 
@@ -278,6 +279,7 @@ private fun ViewfinderOverlays(state: AppState, settings: AppSettings, actions: 
         if (state.burstActive && state.burstNight) HoldStill(state)
         if (state.burstActive && state.burstKind == io.github.realkhfan.foco.processing.ShotKind.ACTION_PAN) FollowSubject(state)
         if (state.panoActive) PanoramaGuide(state)
+        if (state.scanning && state.scanEdit == null) ScanOverlay(state)
         state.countdown?.let { n ->
             Text(
                 n.toString(),
@@ -293,7 +295,7 @@ private fun ViewfinderOverlays(state: AppState, settings: AppSettings, actions: 
 /** Swiping across the viewfinder walks through the photo modes: left = the mode on the right. */
 private fun swipeMode(state: AppState, actions: CameraActions, next: Boolean) {
     if (state.intentMode != IntentMode.NORMAL || state.kind != CaptureKind.PHOTO) return
-    val modes = PhotoMode.entries
+    val modes = state.photoModes
     val i = modes.indexOf(state.photoMode)
     val target = if (next) i + 1 else i - 1
     if (target in modes.indices) actions.setPhotoMode(modes[target])
@@ -921,6 +923,7 @@ private fun ShutterRow(state: AppState, settings: AppSettings, actions: CameraAc
                 onClick = actions::pauseResume,
             )
             state.intentMode != IntentMode.NORMAL -> Spacer(Modifier.size(56.dp))
+            state.scanning && state.scanPages.isNotEmpty() -> ScanStack(state, actions, iconRotation)
             else -> Thumbnail(state, actions, iconRotation)
         }
         Shutter(state, settings, actions)
@@ -933,6 +936,7 @@ private fun ShutterRow(state: AppState, settings: AppSettings, actions: CameraAc
             } else {
                 Spacer(Modifier.size(56.dp))
             }
+            state.scanning -> if (state.scanPages.isNotEmpty()) ScanDoneButton(state, actions) else Spacer(Modifier.size(56.dp))
             state.caps.hasFront && !state.burstActive -> FlipButton(actions, iconRotation)
             else -> Spacer(Modifier.size(56.dp))
         }
@@ -1001,6 +1005,7 @@ private fun Shutter(state: AppState, settings: AppSettings, actions: CameraActio
                         state.recording -> "Stop recording"
                         isVideo -> "Record"
                         night -> "Take Night photo"
+                        state.photoMode == PhotoMode.SCAN -> "Scan page"
                         else -> "Take photo"
                     }
                 },
@@ -1038,15 +1043,36 @@ private fun Shutter(state: AppState, settings: AppSettings, actions: CameraActio
             state.photoMode == PhotoMode.LONG_EXPOSURE -> Icons.Outlined.ShutterSpeed
             state.photoMode == PhotoMode.ACTION_PAN -> Icons.AutoMirrored.Outlined.DirectionsRun
             state.photoMode == PhotoMode.PANORAMA -> Icons.Outlined.Panorama
+            state.photoMode == PhotoMode.SCAN -> Icons.Outlined.DocumentScanner
             night -> Icons.Outlined.ModeNight
             else -> null
         }
         when {
+            state.scanBusy && !isVideo && state.photoMode == PhotoMode.SCAN ->
+                CircularProgressIndicator(color = Color.Black, strokeWidth = 3.dp, modifier = Modifier.size(30.dp))
             state.panoActive -> Box(Modifier.size(24.dp).clip(RoundedCornerShape(5.dp)).background(primary))
             state.burstActive && state.burstNight && state.burstSecondsLeft > 0 ->
                 Text("${state.burstSecondsLeft}", color = Color.Black, fontSize = 22.sp, fontWeight = FontWeight.Medium)
             modeIcon != null -> Icon(modeIcon, null, tint = Color.Black, modifier = Modifier.size(30.dp))
         }
+    }
+}
+
+/** Scan: finish taking pages and look through them. */
+@Composable
+private fun ScanDoneButton(state: AppState, actions: CameraActions) {
+    val primary = MaterialTheme.colorScheme.primary
+    Box(
+        Modifier
+            .height(48.dp)
+            .clip(CircleShape)
+            .background(primary)
+            .clickable(onClick = actions::openScanReview)
+            .padding(horizontal = 16.dp)
+            .semantics { contentDescription = "Done scanning" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Done", color = MaterialTheme.colorScheme.onPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -1071,7 +1097,7 @@ private fun FlipButton(actions: CameraActions, iconRotation: Float) {
 }
 
 /**
- * The mode strip (Action Pan · Long Exposure · Photo · Night · Panorama). The selected mode sits in the middle in
+ * The mode strip (Action Pan · Long Exposure · Photo · Night · Panorama · Scan). The selected mode sits in the middle in
  * a lavender pill, like Pixel Camera. Swipe it (or the viewfinder) left for the mode on the right and back, or tap.
  */
 @Composable
@@ -1082,7 +1108,7 @@ private fun ModeStrip(state: AppState, actions: CameraActions) {
     }
     val primary = MaterialTheme.colorScheme.primary
     val onPrimary = MaterialTheme.colorScheme.onPrimary
-    val photoModes = PhotoMode.entries
+    val photoModes = state.photoModes
     val isPhoto = state.kind == CaptureKind.PHOTO
     val labels = if (isPhoto) photoModes.map { it.label } else listOf("Video")
     val selected = if (isPhoto) photoModes.indexOf(state.photoMode) else 0

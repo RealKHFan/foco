@@ -38,6 +38,7 @@ import io.github.realkhfan.foco.processing.BurstSession
 import io.github.realkhfan.foco.processing.ShotKind
 import io.github.realkhfan.foco.ui.nightSecondsNow
 import io.github.realkhfan.foco.ui.nightWillRun
+import io.github.realkhfan.foco.ui.photoModes
 import kotlin.math.ceil
 import io.github.realkhfan.foco.settings.AppSettings
 import io.github.realkhfan.foco.settings.SettingKey
@@ -71,11 +72,16 @@ class CameraCoordinator(
     /** Shows a system confirmation (e.g. moving another app's photo to the trash); calls back with the answer. */
     private val launchIntentSender: (IntentSender, (Boolean) -> Unit) -> Unit,
     private val haptic: () -> Unit,
+    /** Opens a system file/folder picker ("Save to…") and calls back with the chosen place. */
+    pickPlace: (Intent, (Uri?) -> Unit) -> Unit = { _, cb -> cb(null) },
 ) : CameraActions {
+    val scan = ScanController(activity, state, engine, haptic, { playShutter() }, pickPlace)
+
     private val sounds by lazy { CameraSounds() }
     private var countdownJob: Job? = null
 
     init {
+        scan.load()
         engine.locationProvider = { location.last }
         engine.screenFlash = object : ImageCapture.ScreenFlash {
             override fun apply(expirationTimeMillis: Long, listener: ImageCapture.ScreenFlashListener) {
@@ -135,6 +141,7 @@ class CameraCoordinator(
         when {
             state.kind == CaptureKind.VIDEO -> startVideo()
             state.photoMode == PhotoMode.PANORAMA -> startPanorama()
+            state.photoMode == PhotoMode.SCAN -> scan.capture()
             state.photoMode != PhotoMode.PHOTO && !state.processing -> state.message = "This mode isn't available on this phone"
             else -> takePhoto()
         }
@@ -460,6 +467,7 @@ class CameraCoordinator(
 
     override fun setPhotoMode(mode: PhotoMode) {
         if (engine.isRecording || engine.isBursting || state.intentMode != IntentMode.NORMAL) return
+        if (mode !in state.photoModes) return
         if (state.kind != CaptureKind.PHOTO) setKind(CaptureKind.PHOTO)
         if (mode == state.photoMode) return
         countdownJob?.cancel()
@@ -470,7 +478,7 @@ class CameraCoordinator(
         if (mode == PhotoMode.NIGHT && state.pro.nightSeconds == 0f) state.pro = state.pro.copy(nightSeconds = null)
         if (state.activeTool == ProTool.NIGHT && mode != PhotoMode.NIGHT && mode != PhotoMode.PHOTO) state.activeTool = null
         // Panoramas are taken with the main camera on the back.
-        if (mode == PhotoMode.PANORAMA && state.lensFacing == CameraSelector.LENS_FACING_FRONT) {
+        if ((mode == PhotoMode.PANORAMA || mode == PhotoMode.SCAN) && state.lensFacing == CameraSelector.LENS_FACING_FRONT) {
             state.lensFacing = CameraSelector.LENS_FACING_BACK
             state.manualLensId = null
             engine.resetZoom()
@@ -481,12 +489,29 @@ class CameraCoordinator(
             PhotoMode.LONG_EXPOSURE -> "Blurs moving water, traffic and crowds. Hold still."
             PhotoMode.ACTION_PAN -> "Follow a moving subject while the photo is taken"
             PhotoMode.PANORAMA -> "Tap the shutter, then turn slowly to one side"
+            PhotoMode.SCAN -> if (state.scanPages.isEmpty()) "Point at a page: Foco finds its edges" else null
             else -> null
         }
         if (mode != PhotoMode.PHOTO && !state.processing) {
             state.message = "${mode.label} isn't available on this phone"
         }
     }
+
+    override fun scanEditDone() = scan.editDone()
+    override fun scanEditCancel() = scan.editCancel()
+    override fun openScanReview() = scan.openReview()
+    override fun closeScanReview() = scan.closeReview()
+    override fun scanSetFilter(page: io.github.realkhfan.foco.scan.ScanPage, filter: io.github.realkhfan.foco.scan.ScanFilter, all: Boolean) =
+        scan.setFilter(page, filter, all)
+    override fun scanTurn(page: io.github.realkhfan.foco.scan.ScanPage) = scan.turn(page)
+    override fun scanDelete(page: io.github.realkhfan.foco.scan.ScanPage) = scan.delete(page)
+    override fun scanMove(page: io.github.realkhfan.foco.scan.ScanPage, delta: Int) = scan.move(page, delta)
+    override fun scanCrop(page: io.github.realkhfan.foco.scan.ScanPage) = scan.crop(page)
+    override fun scanDiscard() = scan.discard()
+    override fun scanImage(page: io.github.realkhfan.foco.scan.ScanPage, size: Int) = scan.image(page, size)
+    override fun scanExport(options: io.github.realkhfan.foco.scan.ExportOptions, target: io.github.realkhfan.foco.ui.ExportTarget) =
+        scan.export(options, target)
+    override fun scanNew() = scan.discard()
 
     override fun flip() {
         if (engine.isRecording || engine.isBursting || !state.caps.hasFront) return

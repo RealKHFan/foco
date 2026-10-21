@@ -20,7 +20,7 @@ enum class IntentMode { NORMAL, IMAGE_CAPTURE, VIDEO_CAPTURE }
 enum class SettingsTab { GENERAL, PRO }
 /** Photo modes in the order of the mode strip (like Pixel Camera, without Portrait). */
 enum class PhotoMode(val label: String) {
-    ACTION_PAN("Action Pan"), LONG_EXPOSURE("Long Exposure"), PHOTO("Photo"), NIGHT("Night"), PANORAMA("Panorama"),
+    ACTION_PAN("Action Pan"), LONG_EXPOSURE("Long Exposure"), PHOTO("Photo"), NIGHT("Night"), PANORAMA("Panorama"), SCAN("Scan"),
 }
 
 /** A captured panorama frame for the live strip at the top. */
@@ -105,6 +105,14 @@ data class Readout(
 
 data class Review(val file: File, val isVideo: Boolean)
 
+/** A page whose corners are being adjusted. [image] is the whole upright photo. */
+class ScanEdit(val page: io.github.realkhfan.foco.scan.ScanPage, val image: Bitmap, corners: FloatArray, val isNew: Boolean) {
+    var corners by mutableStateOf(corners)
+    var turn by mutableIntStateOf(page.turn)
+}
+
+enum class ExportTarget { SAVE, SAVE_TO, SHARE }
+
 /** All UI state. Plain Compose state so the screen can be rendered in tests without a camera. */
 class AppState {
     var permissionGranted by mutableStateOf(false)
@@ -134,6 +142,23 @@ class AppState {
     var panoPitch by mutableFloatStateOf(0f)
     var panoFov by mutableFloatStateOf(0.9f)
     var panoHint by mutableStateOf(PanoHint.START)
+    // Document scan
+    val scanPages = mutableStateListOf<io.github.realkhfan.foco.scan.ScanPage>()
+    /** Live page outline in the viewfinder (fractions of the picture), or null. */
+    var scanQuad by mutableStateOf<FloatArray?>(null)
+    var scanEdit by mutableStateOf<ScanEdit?>(null)
+    var scanReviewOpen by mutableStateOf(false)
+    var scanReviewIndex by mutableIntStateOf(0)
+    var scanBusy by mutableStateOf(false)
+    var scanExportOpen by mutableStateOf(false)
+    var scanExportProgress by mutableStateOf<Float?>(null)
+    var scanExportDone by mutableStateOf<String?>(null)
+    var scanExportOptions by mutableStateOf(
+        io.github.realkhfan.foco.scan.ExportOptions(io.github.realkhfan.foco.scan.ExportNames.defaultName()),
+    )
+    /** Rendered pages by "page key@size". */
+    val scanImages = androidx.compose.runtime.mutableStateMapOf<String, Bitmap>()
+
     /** Short explanation shown when a mode is picked. */
     var modeHint by mutableStateOf<String?>(null)
     var burstProgress by mutableFloatStateOf(0f)
@@ -186,6 +211,12 @@ class AppState {
     var review by mutableStateOf<Review?>(null)
 }
 
+/** Scan mode is on (document scanning). */
+val AppState.scanning: Boolean get() = kind == CaptureKind.PHOTO && photoMode == PhotoMode.SCAN
+
+/** The photo modes offered: Scan keeps documents, so it's left out on the lock screen. */
+val AppState.photoModes: List<PhotoMode> get() = if (secure) PhotoMode.entries - PhotoMode.SCAN else PhotoMode.entries
+
 /** Night will be used for the next photo (Night mode, or "More light: Night auto" in the dark). */
 fun AppState.nightWillRun(settings: io.github.realkhfan.foco.settings.AppSettings): Boolean =
     kind == CaptureKind.PHOTO && processing && pro.nightSeconds != 0f &&
@@ -201,6 +232,19 @@ interface CameraActions {
     fun setKind(kind: CaptureKind) {}
     fun setPhotoMode(mode: PhotoMode) {}
     fun micClicked() {}
+    fun scanEditDone() {}
+    fun scanEditCancel() {}
+    fun openScanReview() {}
+    fun closeScanReview() {}
+    fun scanSetFilter(page: io.github.realkhfan.foco.scan.ScanPage, filter: io.github.realkhfan.foco.scan.ScanFilter, all: Boolean) {}
+    fun scanTurn(page: io.github.realkhfan.foco.scan.ScanPage) {}
+    fun scanDelete(page: io.github.realkhfan.foco.scan.ScanPage) {}
+    fun scanMove(page: io.github.realkhfan.foco.scan.ScanPage, delta: Int) {}
+    fun scanCrop(page: io.github.realkhfan.foco.scan.ScanPage) {}
+    fun scanDiscard() {}
+    fun scanImage(page: io.github.realkhfan.foco.scan.ScanPage, size: Int) {}
+    fun scanExport(options: io.github.realkhfan.foco.scan.ExportOptions, target: ExportTarget) {}
+    fun scanNew() {}
     fun flip() {}
     fun setZoom(zoom: Float, fromChip: Boolean = false) {}
     fun openGallery() {}

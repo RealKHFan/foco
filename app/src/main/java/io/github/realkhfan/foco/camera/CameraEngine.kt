@@ -145,6 +145,12 @@ class CameraEngine(
     private var lastHazeCheck = 0L
     private var hazeStrikes = 0
     private var lastHazeWarning = 0L
+    private var lastScanDetect = 0L
+    private var lastScanHit = 0L
+    @Volatile private var boundForScan = false
+    private val scanning: Boolean get() = state.kind == CaptureKind.PHOTO && state.photoMode == PhotoMode.SCAN
+    /** Rotation from the camera's frames to the (portrait) screen, for drawing the page outline. */
+    @Volatile private var displayRotation = 90
 
     /** Exposure/ISO of recent frames by sensor timestamp, so a burst can tell which frames have new settings. */
     private val frameMeta = ConcurrentHashMap<Long, LongArray>()
@@ -257,6 +263,14 @@ class CameraEngine(
                 lastStats = now
                 clippedFraction = sampleClipped(image)
             }
+            if (boundForScan) {
+                // Only while the viewfinder is visible (not behind the page editor or the review).
+                if (now - lastScanDetect > 120 && state.scanEdit == null && !state.scanReviewOpen) {
+                    lastScanDetect = now
+                    detectPage(image)
+                }
+                return@Analyzer
+            }
             if (settings.qrDetection && state.intentMode == IntentMode.NORMAL && now - lastQrScan > 350) {
                 lastQrScan = now
                 val text = runCatching { qrScanner.scan(image) }.getOrNull()
@@ -343,7 +357,7 @@ class CameraEngine(
     private enum class Setup { PROCESSING, CLASSIC, CLASSIC_SIMPLE, VIDEO, VIDEO_NO_SNAPSHOT, VIDEO_SIMPLE }
 
     /** Night, Long Exposure, Action Pan and Panorama always need Foco's frames; Photo only if processing is on. */
-    private fun wantsProcessing(caps: Capabilities): Boolean = state.kind == CaptureKind.PHOTO && (
+    private fun wantsProcessing(caps: Capabilities): Boolean = state.kind == CaptureKind.PHOTO && state.photoMode != PhotoMode.SCAN && (
         state.photoMode != PhotoMode.PHOTO ||
             settings.processing && !settings.raw && settings.flash != FlashSetting.ON &&
             !(settings.resolution == ResolutionSetting.MP50 && caps.hiResAvailable)
@@ -352,7 +366,8 @@ class CameraEngine(
     /** Rebinds only if the new photo mode needs a different camera setup. */
     fun photoModeChanged() {
         val caps = state.caps
-        if (wantsProcessing(caps) != state.processing) rebind()
+        val scan = scanning
+        if (wantsProcessing(caps) != state.processing || scan != boundForScan) rebind()
         if (state.photoMode == PhotoMode.PANORAMA) setZoom(1f, fromChip = true)
     }
 
@@ -446,6 +461,7 @@ class CameraEngine(
             return
         }
         camera = cam
+        displayRotation = runCatching { cam.cameraInfo.sensorRotationDegrees }.getOrDefault(90)
         state.processing = usedSetup == Setup.PROCESSING
         boundPhysicalId = usedPhysical
         zoomFactor = usedPhysical?.let { caps.lensRatios[it] } ?: 1f
@@ -460,7 +476,8 @@ class CameraEngine(
 
     private fun buildUseCases(view: PreviewView, caps: Capabilities, setup: Setup): List<UseCase> {
         val isVideo = state.kind == CaptureKind.VIDEO
-        val ratio = if (isVideo || settings.ratio == RatioSetting.WIDE_9_16) AspectRatio.RATIO_16_9 else AspectRatio.RATIO_4_3
+        boundForScan = scanning
+        val ratio = if (!scanning && (isVideo || settings.ratio == RatioSetting.WIDE_9_16)) AspectRatio.RATIO_16_9 else AspectRatio.RATIO_4_3
         val aspect = AspectRatioStrategy(ratio, AspectRatioStrategy.FALLBACK_RULE_AUTO)
 
         val previewBuilder = Preview.Builder()
@@ -493,9 +510,10 @@ class CameraEngine(
             }
             Setup.CLASSIC, Setup.CLASSIC_SIMPLE -> {
                 val simple = setup == Setup.CLASSIC_SIMPLE
-                val wantHiRes = !simple && settings.resolution == ResolutionSetting.MP50 &&
+                val wantHiRes = !simple && !scanning && settings.resolution == ResolutionSetting.MP50 &&
                     caps.hiResAvailable && ratio == AspectRatio.RATIO_4_3
                 photoFormat = when {
+                    scanning -> ImageCapture.OUTPUT_FORMAT_JPEG
                     !simple && settings.raw && caps.rawSupported -> ImageCapture.OUTPUT_FORMAT_RAW_JPEG
                     !simple && settings.ultraHdr && caps.ultraHdrSupported && !wantHiRes -> ImageCapture.OUTPUT_FORMAT_JPEG_ULTRA_HDR
                     else -> ImageCapture.OUTPUT_FORMAT_JPEG
@@ -520,7 +538,7 @@ class CameraEngine(
                     .build()
                 imageCapture = capture
                 cases += capture
-                if (!simple && settings.qrDetection && state.intentMode == IntentMode.NORMAL) {
+                if (!simple && (settings.qrDetection || scanning) && state.intentMode == IntentMode.NORMAL) {
                     val small = ImageAnalysis.Builder()
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
@@ -819,6 +837,65 @@ class CameraEngine(
         imageCapture?.targetRotation = rotation
         analysis?.targetRotation = rotation
         if (recording == null) videoCapture?.targetRotation = rotation
+    }
+
+    /**
+     * Scan: finds the page in a small copy of the viewfinder and shows its outline (smoothed, so it doesn't jitter).
+     * Runs on the analysis thread.
+     */
+    private fun detectPage(image: ImageProxy) {
+        val plane = image.planes[0]
+        val buf = plane.buffer
+        val step = maxOf(1, maxOf(image.width, image.height) / 320)
+        val w = image.width / step
+        val h = image.height / step
+        val gray = FloatArray(w * h)
+        for (y in 0 until h) {
+            val row = y * step * plane.rowStride
+            for (x in 0 until w) gray[y * w + x] = (buf.get(row + x * step * plane.pixelStride).toInt() and 0xff).toFloat()
+        }
+        val found = io.github.realkhfan.foco.scan.DocumentDetector.detect(io.github.realkhfan.foco.scan.GrayImage(w, h, gray))
+        val now = SystemClock.uptimeMillis()
+        val quad = found?.let {
+            val upright = io.github.realkhfan.foco.scan.Quad.rotate(it.corners, w.toFloat(), h.toFloat(), displayRotation)
+            val swap = displayRotation == 90 || displayRotation == 270
+            io.github.realkhfan.foco.scan.Quad.scale(upright, 1f / (if (swap) h else w), 1f / (if (swap) w else h))
+        }
+        mainHandler.post {
+            if (quad != null) {
+                lastScanHit = now
+                val prev = state.scanQuad
+                state.scanQuad = if (prev == null) quad else FloatArray(8) { prev[it] + (quad[it] - prev[it]) * 0.5f }
+            } else if (now - lastScanHit > 500) {
+                state.scanQuad = null
+            }
+        }
+    }
+
+    /** Scan: takes a full-resolution JPEG into memory (not into the gallery). */
+    fun takeScanPhoto(onResult: (jpeg: ByteArray?, rotation: Int, focal: Float) -> Unit) {
+        val capture = imageCapture ?: return onResult(null, 0, 0f)
+        capture.targetRotation = targetRotation
+        runCatching { capture.flashMode = if (settings.flash == FlashSetting.ON && state.caps.hasFlash) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF }
+        val caps = state.caps
+        val focal = if (caps.focalMm > 0f && caps.sensorWidthMm > 0f) caps.focalMm / caps.sensorWidthMm * state.zoom.coerceAtLeast(0.3f) else 0f
+        capture.takePicture(analysisExecutor, object : ImageCapture.OnImageCapturedCallback() {
+            override fun onCaptureSuccess(image: ImageProxy) {
+                val bytes = try {
+                    val buffer = image.planes[0].buffer
+                    ByteArray(buffer.remaining()).also { buffer.get(it) }
+                } catch (_: Exception) {
+                    null
+                }
+                val rotation = image.imageInfo.rotationDegrees
+                image.close()
+                mainHandler.post { onResult(bytes, rotation, focal) }
+            }
+
+            override fun onError(exception: ImageCaptureException) {
+                mainHandler.post { onResult(null, 0, 0f) }
+            }
+        })
     }
 
     fun mustPlayShutterSound(): Boolean = runCatching { CameraInfo.mustPlayShutterSound() }.getOrDefault(false)

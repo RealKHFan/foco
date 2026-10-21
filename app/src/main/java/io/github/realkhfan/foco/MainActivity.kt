@@ -42,6 +42,8 @@ import io.github.realkhfan.foco.ui.MessageToast
 import io.github.realkhfan.foco.ui.PermissionScreen
 import io.github.realkhfan.foco.ui.SettingsScreen
 import io.github.realkhfan.foco.ui.ViewerScreen
+import io.github.realkhfan.foco.ui.ScanCropScreen
+import io.github.realkhfan.foco.ui.ScanReviewScreen
 import io.github.realkhfan.foco.ui.theme.FocoTheme
 import kotlinx.coroutines.launch
 
@@ -61,6 +63,13 @@ open class MainActivity : ComponentActivity() {
     private var screenOffReceiver: BroadcastReceiver? = null
 
     private var intentSenderCallback: ((Boolean) -> Unit)? = null
+    private var placeCallback: ((android.net.Uri?) -> Unit)? = null
+    private val placeLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = if (result.resultCode == RESULT_OK) result.data?.data else null
+        placeCallback?.invoke(uri)
+        placeCallback = null
+    }
+
     private val intentSenderLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         intentSenderCallback?.invoke(result.resultCode == RESULT_OK)
         intentSenderCallback = null
@@ -121,6 +130,14 @@ open class MainActivity : ComponentActivity() {
                 intentSenderCallback = callback
                 runCatching { intentSenderLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
                     .onFailure { callback(false) }
+            },
+            pickPlace = { intent, callback ->
+                placeCallback = callback
+                runCatching { placeLauncher.launch(intent) }.onFailure {
+                    placeCallback = null
+                    callback(null)
+                    state.message = "No file manager to pick a place"
+                }
             },
             haptic = {
                 if (settings.haptics) window.decorView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -230,7 +247,9 @@ open class MainActivity : ComponentActivity() {
         }
         state.viewerItems?.let { ViewerScreen(it, state.secure, coordinator) }
         if (state.fullSettingsOpen) SettingsScreen(state, settings, coordinator)
-        if (state.viewerItems != null || state.fullSettingsOpen) MessageToast(state)
+        if (state.scanReviewOpen && state.scanPages.isNotEmpty()) ScanReviewScreen(state, coordinator)
+        state.scanEdit?.let { ScanCropScreen(it, coordinator) }
+        if (state.viewerItems != null || state.fullSettingsOpen || state.scanReviewOpen || state.scanEdit != null) MessageToast(state)
     }
 
     private fun startCamera() {
