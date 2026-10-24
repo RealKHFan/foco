@@ -1,5 +1,6 @@
 package io.github.realkhfan.foco
 
+import io.github.realkhfan.foco.ui.modeUnavailable
 import android.Manifest
 import android.app.Activity
 import android.content.ClipData
@@ -142,7 +143,7 @@ class CameraCoordinator(
             state.kind == CaptureKind.VIDEO -> startVideo()
             state.photoMode == PhotoMode.PANORAMA -> startPanorama()
             state.photoMode == PhotoMode.SCAN -> scan.capture()
-            state.photoMode != PhotoMode.PHOTO && !state.processing -> state.message = "This mode isn't available on this phone"
+            state.modeUnavailable(state.photoMode) -> state.message = "${state.photoMode.label} isn't available on this phone"
             else -> takePhoto()
         }
     }
@@ -492,7 +493,7 @@ class CameraCoordinator(
             PhotoMode.SCAN -> if (state.scanPages.isEmpty()) "Point at a page: Foco finds its edges" else null
             else -> null
         }
-        if (mode != PhotoMode.PHOTO && !state.processing) {
+        if (state.modeUnavailable(mode)) {
             state.message = "${mode.label} isn't available on this phone"
         }
     }

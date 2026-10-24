@@ -1,5 +1,10 @@
 package io.github.realkhfan.foco.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -42,7 +46,7 @@ const val SOURCE_URL = "https://github.com/RealKHFan/foco"
 @Composable
 fun SettingsScreen(state: AppState, settings: AppSettings, actions: CameraActions) {
     BackHandler { state.fullSettingsOpen = false }
-    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(Color.Black).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { state.fullSettingsOpen = false }) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = Color.White)

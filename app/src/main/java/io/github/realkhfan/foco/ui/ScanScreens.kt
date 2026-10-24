@@ -1,5 +1,10 @@
 package io.github.realkhfan.foco.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -22,7 +27,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -175,7 +179,9 @@ fun ScanCropScreen(edit: ScanEdit, actions: CameraActions) {
     val image = remember(bitmap) { bitmap.asImageBitmap() }
 
     Column(
-        Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().navigationBarsPadding()
+        Modifier.fillMaxSize().background(Color.Black)
+            // Clear of the camera hole even though the status bar is hidden.
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).navigationBarsPadding()
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -313,7 +319,7 @@ fun ScanReviewScreen(state: AppState, actions: CameraActions) {
             // Keep touches away from the viewfinder underneath.
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
     ) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = actions::closeScanReview) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back to camera", tint = Color.White) }
                 Text(

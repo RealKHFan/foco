@@ -1,5 +1,10 @@
 package io.github.realkhfan.foco.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.WindowInsets
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.ThumbnailUtils
@@ -17,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -101,7 +105,7 @@ fun ViewerScreen(items: List<MediaItem>, secure: Boolean, actions: CameraActions
         }
 
         Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp),
+            Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = actions::closeViewer) {

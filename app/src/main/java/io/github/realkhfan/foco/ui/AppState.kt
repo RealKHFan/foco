@@ -19,8 +19,9 @@ enum class CaptureKind { PHOTO, VIDEO }
 enum class IntentMode { NORMAL, IMAGE_CAPTURE, VIDEO_CAPTURE }
 enum class SettingsTab { GENERAL, PRO }
 /** Photo modes in the order of the mode strip (like Pixel Camera, without Portrait). */
-enum class PhotoMode(val label: String) {
-    ACTION_PAN("Action Pan"), LONG_EXPOSURE("Long Exposure"), PHOTO("Photo"), NIGHT("Night"), PANORAMA("Panorama"), SCAN("Scan"),
+enum class PhotoMode(val label: String, val needsProcessing: Boolean = true) {
+    ACTION_PAN("Action Pan"), LONG_EXPOSURE("Long Exposure"), PHOTO("Photo", needsProcessing = false), NIGHT("Night"),
+    PANORAMA("Panorama"), SCAN("Scan", needsProcessing = false),
 }
 
 /** A captured panorama frame for the live strip at the top. */
@@ -213,6 +214,12 @@ class AppState {
 
 /** Scan mode is on (document scanning). */
 val AppState.scanning: Boolean get() = kind == CaptureKind.PHOTO && photoMode == PhotoMode.SCAN
+
+/**
+ * The phone refused Foco's multi-frame setup, so a mode that needs it can't work. Photo and Scan work with the
+ * camera's own photos. Only known once the camera is running.
+ */
+fun AppState.modeUnavailable(mode: PhotoMode): Boolean = mode.needsProcessing && cameraReady && !processing
 
 /** The photo modes offered: Scan keeps documents, so it's left out on the lock screen. */
 val AppState.photoModes: List<PhotoMode> get() = if (secure) PhotoMode.entries - PhotoMode.SCAN else PhotoMode.entries
