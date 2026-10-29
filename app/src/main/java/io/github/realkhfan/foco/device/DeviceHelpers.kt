@@ -32,8 +32,13 @@ class OrientationWatcher(
     private val onRotation: (degrees: Int, surfaceRotation: Int) -> Unit,
     private val onTilt: (Tilt) -> Unit,
     private val onMotion: (rate: Float, x: Float, y: Float) -> Unit = { _, _, _ -> },
+    /** No sensor data came within 2 s of [start]: GrapheneOS's Sensors permission is probably off. */
+    private val onNoSensors: () -> Unit = {},
 ) : SensorEventListener {
     private var current = 0
+    private var gotData = false
+    private val handler = android.os.Handler(Looper.getMainLooper())
+    private val checkData = Runnable { if (!gotData) onNoSensors() }
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val gravity: Sensor? = sensorManager?.getDefaultSensor(Sensor.TYPE_GRAVITY)
         ?: sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -74,14 +79,18 @@ class OrientationWatcher(
         if (listener.canDetectOrientation()) listener.enable()
         gravity?.let { sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
         gyro?.let { sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        gotData = false
+        handler.postDelayed(checkData, 2000)
     }
 
     fun stop() {
+        handler.removeCallbacks(checkData)
         listener.disable()
         sensorManager?.unregisterListener(this)
     }
 
     override fun onSensorChanged(event: SensorEvent) {
+        gotData = true
         if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
             val (gx, gy, gz) = Triple(event.values[0], event.values[1], event.values[2])
             if (lastGyroNs != 0L) {
@@ -148,9 +157,11 @@ class OrientationWatcher(
 /** Optional GPS tag for photos. Uses the phone's own location providers (no Google Play Services). */
 class LocationTracker(private val context: Context) : LocationListener {
     private val manager = context.getSystemService(LocationManager::class.java)
-    @Volatile var last: Location? = null
-        private set
+    @Volatile private var newest: Location? = null
     private var running = false
+
+    /** Where the phone is now, or null if the newest fix is too old to tag a photo with. */
+    val last: Location? get() = newest?.takeIf { isFresh(it.time, System.currentTimeMillis()) }
 
     fun hasPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -166,7 +177,7 @@ class LocationTracker(private val context: Context) : LocationListener {
             add(LocationManager.NETWORK_PROVIDER)
         }.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
         providers.forEach { provider ->
-            runCatching { manager.getLastKnownLocation(provider) }.getOrNull()?.let { if (isBetter(it)) last = it }
+            runCatching { manager.getLastKnownLocation(provider) }.getOrNull()?.let { if (isBetter(it)) newest = it }
             runCatching { manager.requestLocationUpdates(provider, 5_000L, 10f, this, Looper.getMainLooper()) }
         }
     }
@@ -178,12 +189,23 @@ class LocationTracker(private val context: Context) : LocationListener {
     }
 
     private fun isBetter(location: Location): Boolean {
-        val current = last ?: return true
-        return location.time > current.time || location.accuracy < current.accuracy
+        val current = newest ?: return true
+        return isBetter(location.time, location.accuracy, current.time, current.accuracy)
     }
 
     override fun onLocationChanged(location: Location) {
-        if (isBetter(location)) last = location
+        if (isBetter(location)) newest = location
+    }
+
+    companion object {
+        /** Older than this, a fix says where you were, not where the photo is: better no location than a wrong one. */
+        const val MAX_AGE_MS = 10 * 60_000L
+
+        fun isFresh(fixTime: Long, now: Long) = now - fixTime < MAX_AGE_MS
+
+        /** The newer fix wins; accuracy only decides between fixes of the same moment. */
+        fun isBetter(time: Long, accuracy: Float, currentTime: Long, currentAccuracy: Float) =
+            time > currentTime || time == currentTime && accuracy < currentAccuracy
     }
 }
 

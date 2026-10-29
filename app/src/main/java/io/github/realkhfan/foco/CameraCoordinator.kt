@@ -31,6 +31,7 @@ import io.github.realkhfan.foco.device.CameraSounds
 import io.github.realkhfan.foco.device.MicCheck
 import io.github.realkhfan.foco.device.MicStatus
 import io.github.realkhfan.foco.device.LocationTracker
+import io.github.realkhfan.foco.media.CaptureOutput
 import io.github.realkhfan.foco.media.GalleryIntents
 import io.github.realkhfan.foco.media.MediaItem
 import io.github.realkhfan.foco.media.MediaNaming
@@ -154,6 +155,10 @@ class CameraCoordinator(
             state.message = "Still saving the last photos…"
             return
         }
+        if (state.sensorsMissing) {
+            state.message = "Panorama needs the motion sensors. Allow Sensors for Foco in its app permissions."
+            return
+        }
         state.panoShots.clear()
         state.panoHint = PanoHint.START
         state.panoPitch = 0f
@@ -183,14 +188,13 @@ class CameraCoordinator(
                 state.capturing = false
                 if (frames < 2) {
                     state.message = "Turn the phone slowly to one side to take a panorama"
-                    state.processingCount = (state.processingCount - 1).coerceAtLeast(0)
+                    processing(-1)
                     loadLatest()
                 }
             }
 
             override fun onSaved(uri: String?) {
-                if (state.processingCount == 0) return
-                state.processingCount = (state.processingCount - 1).coerceAtLeast(0)
+                processing(-1)
                 if (uri == null) {
                     state.message = "Couldn't make the panorama"
                     loadLatest()
@@ -209,9 +213,20 @@ class CameraCoordinator(
         state.burstKind = null
         state.capturing = true
         state.modeHint = null
-        state.processingCount++
+        processing(+1)
         playShutter()
         haptic()
+    }
+
+    /**
+     * Counts photos still being processed. While there are any, a short foreground service keeps Foco
+     * alive, so closing the app right after the shutter can't lose them.
+     */
+    private fun processing(delta: Int) {
+        val before = state.processingCount
+        state.processingCount = (before + delta).coerceAtLeast(0)
+        if (before == 0 && state.processingCount > 0) SavingService.start(activity.applicationContext)
+        if (before > 0 && state.processingCount == 0) SavingService.done()
     }
 
     private fun playShutter() {
@@ -267,7 +282,7 @@ class CameraCoordinator(
             }
 
             override fun onSaved(uri: String?) {
-                state.processingCount = (state.processingCount - 1).coerceAtLeast(0)
+                processing(-1)
                 when {
                     uri == null -> state.message = "Couldn't save photo"
                     intentFile != null -> state.review = Review(intentFile, isVideo = false)
@@ -283,7 +298,7 @@ class CameraCoordinator(
         state.modeHint = null
         state.burstProgress = 0f
         state.burstSecondsLeft = ceil(plan.seconds).toInt()
-        state.processingCount++
+        processing(+1)
         if (plan.kind == ShotKind.HDR || plan.kind == ShotKind.ZOOM) state.flashTick++
         playShutter()
         haptic()
@@ -587,10 +602,12 @@ class CameraCoordinator(
                 state.lastItem = item
                 state.thumbnail = item?.let { withContext(Dispatchers.IO) { media.thumbnail(it, 256) } }
             }
-            val recent = withContext(Dispatchers.IO) { media.recent(300) }
             GalleryIntents.open(activity, item) {
                 // No Google Photos: swipe through the recent camera shots in Foco's own viewer.
-                state.viewerItems = recent.ifEmpty { listOfNotNull(item) }.ifEmpty { null }
+                activity.lifecycleScope.launch {
+                    val recent = withContext(Dispatchers.IO) { media.recent(300) }
+                    state.viewerItems = recent.ifEmpty { listOfNotNull(item) }.ifEmpty { null }
+                }
             }
         }
     }
@@ -623,14 +640,12 @@ class CameraCoordinator(
     }
 
     private suspend fun afterRemoved(item: MediaItem) {
-        run {
-            state.sessionItems.remove(item)
-            state.viewerItems = state.viewerItems?.filter { it != item }?.takeIf { it.isNotEmpty() }
-            if (state.lastItem == item) {
-                val next = if (state.secure) state.sessionItems.firstOrNull() else withContext(Dispatchers.IO) { media.latest() }
-                state.lastItem = next
-                state.thumbnail = next?.let { withContext(Dispatchers.IO) { media.thumbnail(it, 256) } }
-            }
+        state.sessionItems.remove(item)
+        state.viewerItems = state.viewerItems?.filter { it != item }?.takeIf { it.isNotEmpty() }
+        if (state.lastItem == item) {
+            val next = if (state.secure) state.sessionItems.firstOrNull() else withContext(Dispatchers.IO) { media.latest() }
+            state.lastItem = next
+            state.thumbnail = next?.let { withContext(Dispatchers.IO) { media.thumbnail(it, 256) } }
         }
     }
 
@@ -668,7 +683,10 @@ class CameraCoordinator(
 
     private fun deliver(review: Review, output: Uri?): Intent? = runCatching {
         val resolver = activity.contentResolver
+        if (!review.isVideo && settings.stripDeviceInfo) media.stripDeviceInfo(review.file)
         if (output != null) {
+            val privateDirs = listOf(activity.dataDir, activity.createDeviceProtectedStorageContext().dataDir).map { it.canonicalFile }
+            if (!CaptureOutput.isSafe(output, "${activity.packageName}.files", privateDirs, media::ownedByFoco)) return@runCatching null
             resolver.openOutputStream(output, "wt")?.use { out -> review.file.inputStream().use { it.copyTo(out) } }
                 ?: return@runCatching null
             return@runCatching Intent().setData(output).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

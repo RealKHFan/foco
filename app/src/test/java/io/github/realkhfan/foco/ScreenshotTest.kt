@@ -270,6 +270,16 @@ class ScreenshotTest {
         },
     )
 
+    @Test fun proToolbarWithLargestText() {
+        org.robolectric.RuntimeEnvironment.setFontScale(2f)
+        shoot("36_pro_toolbar_large_text", state { proBarOpen = true; activeTool = ProTool.WHITE_BALANCE })
+    }
+
+    @Test fun settingsProWithLargestText() {
+        org.robolectric.RuntimeEnvironment.setFontScale(2f)
+        shoot("37_photo_settings_pro_large_text", state { settingsOpen = true; settingsTab = SettingsTab.PRO })
+    }
+
     private fun panoThumb(i: Int): Bitmap {
         val bmp = Bitmap.createBitmap(48, 64, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)

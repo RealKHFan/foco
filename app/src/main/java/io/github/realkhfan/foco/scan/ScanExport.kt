@@ -53,11 +53,14 @@ object ExportNames {
 
 /** Renders the pages into files and saves or shares them. Runs on a background thread. */
 class ScanExporter(private val context: Context, private val store: ScanStore) {
-    private val outDir get() = File(context.cacheDir, "share").apply { mkdirs() }
+    private val shareDir get() = File(context.cacheDir, "share").apply { mkdirs() }
 
     /** Makes the export files in the app's cache; [progress] gets (done, total). */
     fun build(pages: List<ScanPage>, options: ExportOptions, progress: (Int, Int) -> Unit = { _, _ -> }): List<File> {
-        outDir.listFiles()?.forEach { it.delete() }
+        // Each export gets its own folder, so a file shared earlier (and read later by that app) stays valid.
+        val now = System.currentTimeMillis()
+        shareDir.listFiles()?.filter { now - it.lastModified() > KEEP_MS }?.forEach { it.deleteRecursively() }
+        val outDir = java.nio.file.Files.createTempDirectory(shareDir.toPath(), "export").toFile()
         val names = ExportNames.files(options.name, options.format, pages.size)
         return if (options.format == ExportFormat.PDF) {
             val parts = pages.mapIndexed { i, page ->
@@ -150,6 +153,11 @@ class ScanExporter(private val context: Context, private val store: ScanStore) {
         intent.clipData = android.content.ClipData.newRawUri(null, uris[0]).apply { uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) } }
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         return Intent.createChooser(intent, null).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    companion object {
+        /** Exports are kept a day for apps that read a shared file later; then the cache is cleaned. */
+        const val KEEP_MS = 24 * 3600_000L
     }
 
     private fun copy(file: File, out: OutputStream) {

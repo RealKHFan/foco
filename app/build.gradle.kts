@@ -21,8 +21,8 @@ android {
         applicationId = "io.github.realkhfan.foco"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.3.0"
+        versionCode = 6
+        versionName = "1.3.1"
     }
 
     signingConfigs {
@@ -63,6 +63,7 @@ android {
             isIncludeAndroidResources = true
             all { test ->
                 test.systemProperty("robolectric.pixelCopyRenderMode", "hardware")
+                test.maxHeapSize = "1g" // the scan screenshots render real full-size pages
                 // Optional: a Maven mirror for Robolectric's Android jars (set in ~/.gradle/gradle.properties).
                 providers.gradleProperty("robolectricRepo").orNull?.let {
                     test.systemProperty("robolectric.dependency.repo.url", it)
@@ -102,15 +103,13 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.12.4")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0") // pins the version Compose uses
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.camera:camera-core:$camerax")

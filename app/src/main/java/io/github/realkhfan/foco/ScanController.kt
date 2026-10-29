@@ -34,13 +34,16 @@ class ScanController(
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val renderThread = Dispatchers.Default.limitedParallelism(1)
+    /** All writes to the stored pages, one after another, so an older page list can never win over a newer one. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val storeThread = Dispatchers.IO.limitedParallelism(1)
     private val pending = mutableSetOf<String>()
 
     /** Brings back the pages of an unfinished scan. */
     fun load() {
         if (state.secure) return // scans aren't shown on the lock screen
         activity.lifecycleScope.launch {
-            val pages = withContext(Dispatchers.IO) { store.load() }
+            val pages = withContext(storeThread) { store.load() }
             state.scanPages.clear()
             state.scanPages.addAll(pages)
         }
@@ -63,7 +66,7 @@ class ScanController(
                 return@takeScanPhoto
             }
             activity.lifecycleScope.launch {
-                val result = withContext(Dispatchers.IO) {
+                val result = withContext(storeThread) {
                     runCatching {
                         val page = store.add(jpeg, rotation, focal)
                         page to store.upright(page, EDIT_SIZE)
@@ -164,7 +167,7 @@ class ScanController(
         state.scanReviewOpen = false
         state.scanExportDone = null
         state.scanExportOptions = state.scanExportOptions.copy(name = ExportNames.defaultName())
-        activity.lifecycleScope.launch(Dispatchers.IO) { store.clear() }
+        activity.lifecycleScope.launch(storeThread) { store.clear() }
     }
 
     /** Renders a page at [size] (long side) into state.scanImages, one at a time to keep memory low. */
@@ -278,7 +281,7 @@ class ScanController(
 
     private fun persist() {
         val pages = state.scanPages.toList()
-        activity.lifecycleScope.launch(Dispatchers.IO) { store.save(pages) }
+        activity.lifecycleScope.launch(storeThread) { store.save(pages) }
     }
 
     companion object {

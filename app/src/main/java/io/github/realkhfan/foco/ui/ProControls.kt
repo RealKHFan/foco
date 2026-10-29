@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -299,7 +299,8 @@ private fun ToolButton(
 ) {
     val primary = MaterialTheme.colorScheme.primary
     Column(
-        Modifier.width(80.dp).alpha(if (enabled) 1f else 0.38f),
+        // At least 80 dp, wider when large text needs it (the row scrolls), so labels never overlap.
+        Modifier.widthIn(min = 80.dp).alpha(if (enabled) 1f else 0.38f),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -323,7 +324,6 @@ private fun ToolButton(
             fontSize = 12.sp,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.wrapContentWidth(unbounded = true),
         )
     }
 }

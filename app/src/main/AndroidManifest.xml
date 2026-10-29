@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Keeps photos that are still being processed from being lost when the app is closed (no prompt). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Lets the gallery bubble show the newest photo in DCIM/Camera, also ones from other camera apps. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -90,6 +92,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".SavingService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
 
         <!-- Hands exported scans to the app picked in "Share" (read-only, only the files being shared). -->
         <provider

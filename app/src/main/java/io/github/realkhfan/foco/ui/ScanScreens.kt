@@ -9,6 +9,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -139,7 +143,7 @@ fun ScanStack(state: AppState, actions: CameraActions, iconRotation: Float) {
     Box(
         Modifier
             .size(56.dp)
-            .androidRotate(iconRotation)
+            .rotate(iconRotation)
             .clickable(onClick = actions::openScanReview)
             .semantics { contentDescription = "Scanned pages: ${state.scanPages.size}" },
     ) {
@@ -158,8 +162,6 @@ fun ScanStack(state: AppState, actions: CameraActions, iconRotation: Float) {
         }
     }
 }
-
-private fun Modifier.androidRotate(degrees: Float) = this.rotate(degrees)
 
 // ------------------------------------------------------------------------------------- corner editor
 
@@ -366,7 +368,10 @@ fun ScanReviewScreen(state: AppState, actions: CameraActions) {
             Spacer(Modifier.height(8.dp))
             FilterRow(current, actions)
             Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
                 PageAction("Crop", Icons.Outlined.Crop) { actions.scanCrop(current) }
                 PageAction("Rotate", Icons.Outlined.RotateRight) { actions.scanTurn(current) }
                 PageAction("Earlier", Icons.AutoMirrored.Outlined.ArrowBack, enabled = pager.currentPage > 0) { actions.scanMove(current, -1) }
@@ -443,8 +448,9 @@ fun ScanReviewScreen(state: AppState, actions: CameraActions) {
 private fun FilterRow(page: ScanPage, actions: CameraActions) {
     val primary = MaterialTheme.colorScheme.primary
     val onPrimary = MaterialTheme.colorScheme.onPrimary
+    // Scrolls sideways when large text makes it wider than the screen.
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -455,6 +461,8 @@ private fun FilterRow(page: ScanPage, actions: CameraActions) {
                 color = if (selected) onPrimary else Color.White,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(if (selected) primary else FocoColors.ToggleBg)
@@ -466,6 +474,8 @@ private fun FilterRow(page: ScanPage, actions: CameraActions) {
             "To all",
             color = primary,
             fontSize = 13.sp,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.clip(CircleShape).clickable { actions.scanSetFilter(page, page.filter, all = true) }
                 .padding(horizontal = 8.dp, vertical = 7.dp),
         )
@@ -475,12 +485,13 @@ private fun FilterRow(page: ScanPage, actions: CameraActions) {
 @Composable
 private fun PageAction(label: String, icon: ImageVector, enabled: Boolean = true, onClick: () -> Unit) {
     Column(
-        Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick).padding(vertical = 6.dp),
+        Modifier.widthIn(min = 64.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, null, tint = if (enabled) Color.White else Color(0x55FFFFFF))
         Spacer(Modifier.height(4.dp))
-        Text(label, color = if (enabled) Color.White else Color(0x55FFFFFF), fontSize = 12.sp)
+        Text(label, color = if (enabled) Color.White else Color(0x55FFFFFF), fontSize = 12.sp, maxLines = 1, softWrap = false)
     }
 }
 
@@ -503,6 +514,7 @@ fun ScanExportSheet(state: AppState, actions: CameraActions) {
                 .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .background(FocoColors.Sheet)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -550,21 +562,17 @@ fun ScanExportSheet(state: AppState, actions: CameraActions) {
             )
             val progress = state.scanExportProgress
             if (progress != null) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { actions.scanExport(options, ExportTarget.SHARE) }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Share", maxLines = 1)
-                }
-                OutlinedButton(onClick = { actions.scanExport(options, ExportTarget.SAVE_TO) }, enabled = !busy, modifier = Modifier.weight(1.1f)) {
-                    Icon(Icons.Outlined.FolderOpen, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Save to…", maxLines = 1)
-                }
-                Button(onClick = { actions.scanExport(options, ExportTarget.SAVE) }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Outlined.SaveAlt, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Save", maxLines = 1)
+            val buttons: List<@Composable (Modifier) -> Unit> = listOf(
+                { m -> OutlinedButton({ actions.scanExport(options, ExportTarget.SHARE) }, m, enabled = !busy) { ButtonLabel(Icons.Outlined.Share, "Share") } },
+                { m -> OutlinedButton({ actions.scanExport(options, ExportTarget.SAVE_TO) }, m, enabled = !busy) { ButtonLabel(Icons.Outlined.FolderOpen, "Save to…") } },
+                { m -> Button({ actions.scanExport(options, ExportTarget.SAVE) }, m, enabled = !busy) { ButtonLabel(Icons.Outlined.SaveAlt, "Save") } },
+            )
+            // With large text the three don't fit side by side (they'd read "Shar", "Save", "Sav"): stack them.
+            if (LocalDensity.current.fontScale > 1.3f) {
+                buttons.forEach { it(Modifier.fillMaxWidth()) }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    buttons.forEachIndexed { i, button -> button(Modifier.weight(if (i == 1) 1.1f else 1f)) }
                 }
             }
             Text(
@@ -573,6 +581,13 @@ fun ScanExportSheet(state: AppState, actions: CameraActions) {
             )
         }
     }
+}
+
+@Composable
+private fun ButtonLabel(icon: ImageVector, text: String) {
+    Icon(icon, null, modifier = Modifier.size(18.dp))
+    Spacer(Modifier.width(4.dp))
+    Text(text, maxLines = 1)
 }
 
 @Composable

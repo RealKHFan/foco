@@ -38,6 +38,19 @@ It uses Android's open-source CameraX library and the phone's own camera hardwar
 
 Each feature is only offered when the phone actually allows it for third-party apps; otherwise it shows "Unavailable".
 
+## Install
+
+1. Download the latest `Foco-….apk` from [Releases](https://github.com/RealKHFan/foco/releases).
+2. Open it on your phone and allow installing from that app when Android asks.
+3. Updates install the same way, over the old version (settings and unfinished scans are kept).
+
+To check the APK is really from this project, compare its signing certificate (for example with
+[AppVerifier](https://github.com/soupslurpr/AppVerifier) or `apksigner verify --print-certs`). Package `io.github.realkhfan.foco`, SHA-256:
+
+```
+42:17:44:93:CE:00:D3:6E:A1:08:CB:08:35:A3:4C:9F:70:F3:0B:65:F8:63:6B:D9:33:96:5B:DA:4B:C1:2F:C1
+```
+
 ## What it can't do
 
 Pixel Camera's own processing (HDR+, Night Sight, Super Res Zoom, Magic Eraser, Best Take, etc.) is Google's software and

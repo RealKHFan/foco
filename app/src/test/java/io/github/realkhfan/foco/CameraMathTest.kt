@@ -179,6 +179,22 @@ class CameraMathTest {
 
 /** Gallery preview choice, mode swiping, slider maths and the microphone check. */
 class NewLogicTest {
+    @Test fun `photos are never tagged with an old location`() {
+        val tracker = io.github.realkhfan.foco.device.LocationTracker
+        val now = 1_800_000_000_000L
+        val threeDaysAgo = now - 3 * 24 * 3600_000L
+        // A very accurate fix from 3 days ago must not replace a rough one from a minute ago…
+        assertTrue(!tracker.isBetter(threeDaysAgo, 4f, now - 60_000, 40f))
+        // …and the newer fix always wins; accuracy only breaks a tie.
+        assertTrue(tracker.isBetter(now, 40f, now - 60_000, 4f))
+        assertTrue(tracker.isBetter(now, 5f, now, 20f))
+        assertTrue(!tracker.isBetter(now, 20f, now, 5f))
+        // Too old to tag a photo with at all.
+        assertTrue(tracker.isFresh(now - 9 * 60_000, now))
+        assertTrue(!tracker.isFresh(now - 11 * 60_000, now))
+        assertTrue(!tracker.isFresh(threeDaysAgo, now))
+    }
+
     private fun entry(id: Long, path: String, taken: Long) =
         io.github.realkhfan.foco.media.MediaEntry(io.github.realkhfan.foco.media.MediaItem(id, false, "image/jpeg"), path, taken)
 

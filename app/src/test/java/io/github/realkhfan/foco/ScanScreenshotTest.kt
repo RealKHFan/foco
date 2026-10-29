@@ -12,6 +12,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -177,6 +180,33 @@ class ScanScreenshotTest {
         }
         compose.setContent { FocoTheme(dynamic = false) { ScanReviewScreen(s, actions) } }
         capture("33_scan_exported")
+    }
+
+    @Test fun reviewWithLargestText() {
+        org.robolectric.RuntimeEnvironment.setFontScale(2f)
+        val s = state(pages()) { scanReviewOpen = true; scanReviewIndex = 2 }
+        compose.setContent { FocoTheme(dynamic = false) { ScanReviewScreen(s, actions) } }
+        capture("34_scan_review_large_text")
+        // Labels stay on one line…
+        fun height(text: String) = compose.onNodeWithText(text).fetchSemanticsNode().layoutInfo.height
+        assertEquals("B&W on one line", height("Color"), height("B&W"))
+        assertEquals("Rotate on one line", height("Crop"), height("Rotate"))
+        // …and "To all", off-screen at first, comes into view by swiping the row.
+        compose.onNodeWithText("Color").performTouchInput { swipeLeft(startX = centerX, endX = centerX - 700f) }
+        val toAll = compose.onNodeWithText("To all").fetchSemanticsNode().boundsInRoot
+        val screen = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        assertTrue("To all on screen after swiping: $toAll", toAll.left >= screen.left && toAll.right <= screen.right)
+    }
+
+    @Test fun exportWithLargestText() {
+        org.robolectric.RuntimeEnvironment.setFontScale(2f)
+        val s = state(pages()) { scanReviewOpen = true; scanExportOpen = true }
+        compose.setContent { FocoTheme(dynamic = false) { ScanReviewScreen(s, actions) } }
+        capture("35_scan_export_large_text")
+        // Stacked full-width buttons: "Save to…" and "Save" can't be mistaken for each other.
+        val save = compose.onNodeWithText("Save").fetchSemanticsNode().boundsInRoot
+        val saveTo = compose.onNodeWithText("Save to…").fetchSemanticsNode().boundsInRoot
+        assertTrue("stacked", save.top > saveTo.bottom)
     }
 
     @Test fun noScanOnTheLockScreen() {

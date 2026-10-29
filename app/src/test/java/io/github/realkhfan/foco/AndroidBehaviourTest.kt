@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.realkhfan.foco.media.CaptureOutput
 import io.github.realkhfan.foco.media.GalleryIntents
 import io.github.realkhfan.foco.media.MediaItem
 import io.github.realkhfan.foco.settings.AppSettings
@@ -122,6 +123,87 @@ class AndroidBehaviourTest {
         var viewer = false
         assertEquals(GalleryIntents.Target.BUILT_IN, GalleryIntents.open(activity, photo) { viewer = true })
         assertTrue(viewer)
+    }
+
+    @Test fun `camera folder is only listed again after it changed`() {
+        val dir = java.nio.file.Files.createTempDirectory("dcim").toFile()
+        java.io.File(dir, "PXL_1.jpg").writeBytes(byteArrayOf(1))
+        val repo = io.github.realkhfan.foco.media.MediaRepository(app)
+        assertEquals(1, repo.listCameraFolder(dir).size)
+        assertEquals("unchanged folder: no file checks", 0, repo.listCameraFolder(dir).size)
+        java.io.File(dir, "PXL_2.jpg").writeBytes(byteArrayOf(2))
+        dir.setLastModified(dir.lastModified() + 1000) // a new file changes the folder's time
+        assertEquals(2, repo.listCameraFolder(dir).size)
+        dir.deleteRecursively()
+    }
+
+    // ------------------------------------------------------------ other apps asking for a photo
+
+    @Test fun `a save place from another app can't point at foco's own files`() {
+        val private = java.nio.file.Files.createTempDirectory("foco-data").toFile().canonicalFile
+        val shared = java.nio.file.Files.createTempDirectory("sdcard").toFile().canonicalFile
+        val scanList = java.io.File(private, "files/scan/pages.txt").apply { parentFile!!.mkdirs(); writeText("1|90|0|COLOR|0|0|0,0,1,0,1,1,0,1") }
+        val ownPhoto = android.net.Uri.parse("content://media/external/images/media/5")
+        fun safe(uri: String) = CaptureOutput.isSafe(android.net.Uri.parse(uri), "io.github.realkhfan.foco.files", listOf(private)) { it == ownPhoto }
+
+        // Foco's own places: refused.
+        assertFalse(safe("file://${scanList.path}"))
+        assertFalse(safe("file://${shared.path}/../${private.name}/files/new.jpg"))
+        assertFalse(safe("content://io.github.realkhfan.foco.files/share/a.pdf"))
+        assertFalse(safe(ownPhoto.toString()))
+        // An existing file with something in it could only be one of Foco's: refused. New or empty files are fine.
+        val existing = java.io.File(shared, "old.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        assertFalse(safe("file://${existing.path}"))
+        assertTrue(safe("file://${java.io.File(shared, "empty.jpg").apply { createNewFile() }.path}"))
+        assertTrue(safe("file://${shared.path}/new.jpg"))
+        // The usual case: a place the other app made and shared with Foco.
+        assertTrue(safe("content://com.example.notes.fileprovider/photos/123.jpg"))
+        assertTrue(safe("content://media/external/images/media/6"))
+        assertFalse(safe("https://example.com/upload"))
+        private.deleteRecursively()
+        shared.deleteRecursively()
+    }
+
+    // ------------------------------------------------------------ phone without sensor data (GrapheneOS "Sensors" off)
+
+    @Test fun `no sensor data is noticed after 2 seconds`() {
+        var missing = 0
+        val watcher = io.github.realkhfan.foco.device.OrientationWatcher(app, onRotation = { _, _ -> }, onTilt = {}, onNoSensors = { missing++ })
+        watcher.start()
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1900))
+        assertEquals(0, missing)
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(200))
+        assertEquals(1, missing)
+        watcher.stop()
+        // With data arriving there's no complaint.
+        watcher.start()
+        val event = org.robolectric.shadows.SensorEventBuilder.newBuilder()
+            .setSensor(org.robolectric.shadows.ShadowSensor.newInstance(android.hardware.Sensor.TYPE_ACCELEROMETER))
+            .setValues(floatArrayOf(0f, 9.8f, 0f)).build()
+        watcher.onSensorChanged(event)
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(3))
+        assertEquals(1, missing)
+        watcher.stop()
+    }
+
+    // ------------------------------------------------------------ photos still processing
+
+    @Test fun `a short service keeps foco alive while photos are saved`() {
+        val controller = Robolectric.buildService(SavingService::class.java).create()
+        SavingService.start(app)
+        val service = controller.startCommand(0, 1).get()
+        assertTrue(shadowOf(service).lastForegroundNotification != null)
+        assertFalse(shadowOf(service).isStoppedBySelf)
+        SavingService.done()
+        assertTrue(shadowOf(service).isStoppedBySelf)
+        controller.destroy()
+
+        // Saved before Android even started the service: it still goes foreground (required), then stops at once.
+        SavingService.start(app)
+        SavingService.done()
+        val late = Robolectric.buildService(SavingService::class.java).create().startCommand(0, 1).get()
+        assertTrue("was in the foreground, then left it", shadowOf(late).isForegroundStopped)
+        assertTrue(shadowOf(late).isStoppedBySelf)
     }
 
     // ------------------------------------------------------------ settings

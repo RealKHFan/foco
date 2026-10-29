@@ -30,7 +30,7 @@ class PanoramaSession(
     interface Listener {
         fun onShot(thumb: Bitmap, yaw: Float, fov: Float) {}
         fun onHint(hint: Hint) {}
-        /** No more frames: the camera can go back to normal. */
+        /** No more frames: the camera can go back to normal. With fewer than 2 frames nothing is saved (no [onSaved]). */
         fun onCaptured(frames: Int) {}
         fun onSaved(uri: String?) {}
     }
@@ -99,10 +99,7 @@ class PanoramaSession(
         val taken = synchronized(shots) { shots.toList() }
         full = null
         main.post { listener.onCaptured(taken.size) }
-        if (taken.size < 2) {
-            main.post { listener.onSaved(null) }
-            return
-        }
+        if (taken.size < 2) return
         worker.execute {
             val uri = try {
                 val stitcher = PanoramaStitcher(taken, focal)

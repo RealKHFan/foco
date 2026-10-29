@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -181,7 +183,7 @@ fun CameraScreen(
 fun MessageToast(state: AppState) {
     val text = state.message ?: return
     LaunchedEffect(text) {
-        delay(3000)
+        delay(maxOf(3000L, text.length * 60L)) // long messages stay long enough to read
         if (state.message == text) state.message = null
     }
     Box(Modifier.fillMaxSize().padding(horizontal = 32.dp), contentAlignment = Alignment.Center) {
@@ -782,12 +784,14 @@ private fun ReadoutRow(state: AppState) {
     val focus = if (pro.focusDiopters != null) "Manual focus" else "Auto focus"
     val shutter = (pro.shutterNs ?: r.shutterNs)?.let { (if (pro.shutterNs == null) auto else "") + ExposureMath.formatShutter(it) }
     val iso = (pro.iso ?: r.iso)?.let { (if (pro.iso == null) auto else "") + "ISO $it" }
+    // Spread out like Pixel Camera; with large text it scrolls instead of the values running into each other.
     Row(
-        Modifier.fillMaxWidth().background(Color(0x66000000)).padding(horizontal = 20.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().background(Color(0x66000000)).horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         listOfNotNull(lens, focus, shutter, iso).forEach {
-            Text(it, color = Color.White, fontSize = 14.sp, maxLines = 1)
+            Text(it, color = Color.White, fontSize = 14.sp, maxLines = 1, softWrap = false, modifier = Modifier.padding(horizontal = 8.dp))
         }
     }
 }

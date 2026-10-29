@@ -1,12 +1,14 @@
 package io.github.realkhfan.foco.media
 
 import android.content.ActivityNotFoundException
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,5 +78,21 @@ object GalleryIntents {
         false
     }
 
-    enum class Target { GOOGLE_PHOTOS, OTHER_GALLERY, BUILT_IN, NONE }
+    enum class Target { GOOGLE_PHOTOS, BUILT_IN }
+}
+
+/**
+ * Another app that asks for a photo/video chooses where Foco writes it. Foco writes with its own rights,
+ * so it refuses places that are its own: its private folders, its file sharing, its own photos,
+ * and any existing file a file:// path points at (only Foco's own files could be written that way).
+ */
+object CaptureOutput {
+    fun isSafe(uri: Uri, ownAuthority: String, privateDirs: List<File>, ownedByFoco: (Uri) -> Boolean): Boolean = when (uri.scheme) {
+        ContentResolver.SCHEME_CONTENT -> uri.authority != ownAuthority && !ownedByFoco(uri)
+        ContentResolver.SCHEME_FILE -> {
+            val file = uri.path?.let { runCatching { File(it).canonicalFile }.getOrNull() }
+            file != null && privateDirs.none { file.startsWith(it) } && (!file.exists() || file.length() == 0L)
+        }
+        else -> false
+    }
 }

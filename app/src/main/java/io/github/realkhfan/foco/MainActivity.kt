@@ -21,6 +21,7 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -150,6 +151,14 @@ open class MainActivity : ComponentActivity() {
                 engine.setTargetRotation(surfaceRotation)
             },
             onTilt = { state.tilt = it },
+            onNoSensors = {
+                state.sensorsMissing = true
+                if (!sensorHintShown) {
+                    sensorHintShown = true
+                    state.message = "Foco gets no motion sensor data, so photos may be saved sideways and Panorama can't work. " +
+                        "Allow Sensors for Foco in its app permissions."
+                }
+            },
             onMotion = { _, x, y ->
                 state.motion = androidx.compose.ui.geometry.Offset(x, y)
                 if (state.panoActive) {
@@ -177,8 +186,6 @@ open class MainActivity : ComponentActivity() {
             startCamera()
         } else if (!isSecure) {
             permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO) + MEDIA_PERMISSIONS)
-        } else if (MEDIA_PERMISSIONS.none { hasPermission(it) } && !isSecure) {
-            permissionLauncher.launch(MEDIA_PERMISSIONS)
         }
     }
 
@@ -250,6 +257,11 @@ open class MainActivity : ComponentActivity() {
         if (state.scanReviewOpen && state.scanPages.isNotEmpty()) ScanReviewScreen(state, coordinator)
         state.scanEdit?.let { ScanCropScreen(it, coordinator) }
         if (state.viewerItems != null || state.fullSettingsOpen || state.scanReviewOpen || state.scanEdit != null) MessageToast(state)
+        // Scanned documents (IDs, letters…) stay out of screenshots and the recent-apps preview.
+        val showsPages = state.scanReviewOpen || state.scanEdit != null
+        LaunchedEffect(showsPages) {
+            if (showsPages) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 
     private fun startCamera() {
@@ -273,6 +285,7 @@ open class MainActivity : ComponentActivity() {
                 MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL), true, mediaObserver,
             )
         }
+        state.sensorsMissing = false // checked again 2 s after start (Sensors may have been allowed meanwhile)
         orientation.start()
         if (settings.saveLocation) location.start()
         if (!state.permissionGranted && hasPermission(Manifest.permission.CAMERA)) {
@@ -310,7 +323,7 @@ open class MainActivity : ComponentActivity() {
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun cameraVisible() = state.permissionGranted && state.viewerItems == null &&
-        !state.fullSettingsOpen && state.review == null
+        !state.fullSettingsOpen && state.review == null && !state.scanReviewOpen && state.scanEdit == null
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (cameraVisible()) {
@@ -342,6 +355,9 @@ open class MainActivity : ComponentActivity() {
         return super.onKeyUp(keyCode, event)
     }
 }
+
+/** The "no sensors" message is shown once while Foco runs, not every time the camera opens. */
+private var sensorHintShown = false
 
 /** Read access to the camera folder, so the gallery bubble can show the newest photo (also Pixel Camera's). */
 private val MEDIA_PERMISSIONS: Array<String> = if (android.os.Build.VERSION.SDK_INT >= 33) {

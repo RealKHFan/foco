@@ -165,6 +165,8 @@ class AppState {
     var burstProgress by mutableFloatStateOf(0f)
     var burstSecondsLeft by mutableIntStateOf(0)
     var processingCount by mutableIntStateOf(0)
+    /** No motion sensor data (GrapheneOS lets you deny Sensors): rotation and Panorama can't work. */
+    var sensorsMissing by mutableStateOf(false)
     /** Phone movement (rad/s around x and y) for the "hold still" dot. */
     var motion by mutableStateOf(Offset.Zero)
     var lensFacing by mutableIntStateOf(CameraSelector.LENS_FACING_BACK)

@@ -18,6 +18,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.material.icons.outlined.ModeNight
 
 /** Small drawn icons for things Material icons don't have (12/50 MP, RAW, ratios, timer digits). */
@@ -43,7 +45,7 @@ fun MpGlyph(megapixels: String, color: Color, filled: Boolean = false, size: Dp 
         Text(
             text = "$megapixels\nMP",
             color = textColor,
-            style = TextStyle(fontSize = (size.value * 0.34f).sp, lineHeight = (size.value * 0.34f).sp, fontWeight = FontWeight.Bold),
+            style = TextStyle(fontSize = (size * 0.34f).glyphSp(), lineHeight = (size * 0.34f).glyphSp(), fontWeight = FontWeight.Bold),
             textAlign = TextAlign.Center,
         )
     }
@@ -52,7 +54,7 @@ fun MpGlyph(megapixels: String, color: Color, filled: Boolean = false, size: Dp 
 @Composable
 fun RawGlyph(color: Color, crossed: Boolean) {
     Box(Modifier.size(width = 34.dp, height = 24.dp), contentAlignment = Alignment.Center) {
-        Text("RAW", color = color, style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black))
+        Text("RAW", color = color, style = TextStyle(fontSize = 12.dp.glyphSp(), fontWeight = FontWeight.Black))
         if (crossed) {
             Canvas(Modifier.size(width = 30.dp, height = 22.dp)) {
                 drawLine(color, Offset(0f, 0f), Offset(size.width, size.height), strokeWidth = 2.dp.toPx())
@@ -91,7 +93,7 @@ fun NightGlyph(color: Color, auto: Boolean) {
             Text(
                 "A",
                 color = color,
-                style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                style = TextStyle(fontSize = 10.dp.glyphSp(), fontWeight = FontWeight.Bold),
                 modifier = Modifier.align(Alignment.TopEnd),
             )
         }
@@ -116,8 +118,12 @@ fun TimerGlyph(seconds: Int, color: Color, background: Color) {
         Text(
             seconds.toString(),
             color = background,
-            style = TextStyle(fontSize = if (seconds >= 10) 9.sp else 11.sp, fontWeight = FontWeight.Black),
+            style = TextStyle(fontSize = (if (seconds >= 10) 9.dp else 11.dp).glyphSp(), fontWeight = FontWeight.Black),
             modifier = Modifier.align(Alignment.Center),
         )
     }
 }
+
+/** Text inside an icon is sized like the icon (dp), so it doesn't burst out of it with large text; TalkBack reads the button's description. */
+@Composable
+fun Dp.glyphSp(): TextUnit = with(LocalDensity.current) { this@glyphSp.toSp() }

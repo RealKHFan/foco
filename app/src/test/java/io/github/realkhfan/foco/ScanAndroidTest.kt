@@ -229,7 +229,10 @@ class ScanAndroidTest {
         assertEquals(store.render(pages[0], Int.MAX_VALUE)!!.height, first.height)
         val second = BitmapFactory.decodeFile(jpgs[1].path)
         assertTrue("turned page is landscape", second.width > second.height)
-        assertTrue("the PDF was removed when the pictures were made", !pdf[0].exists())
+        assertTrue("the PDF shared earlier is still there after the next export", pdf[0].exists())
+        assertTrue("each export has its own folder", pdf[0].parentFile != jpgs[0].parentFile)
+        // Exports older than a day are cleaned up by the next export.
+        pdf[0].parentFile!!.setLastModified(System.currentTimeMillis() - ScanExporter.KEEP_MS - 60_000)
 
         // Share: content:// links through Foco's own provider, read permission granted.
         val chooser = exporter.shareIntent(jpgs, ExportFormat.JPG)
@@ -252,5 +255,7 @@ class ScanAndroidTest {
         val png = exporter.build(pages.take(1), ExportOptions("One", ExportFormat.PNG, quality = ExportQuality.NORMAL))
         assertEquals(listOf("One.png"), png.map { it.name })
         assertEquals(first.height, BitmapFactory.decodeFile(png[0].path).height)
+        assertTrue("day-old export removed", !pdf[0].exists())
+        assertTrue("recent export kept", jpgs[0].exists())
     }
 }

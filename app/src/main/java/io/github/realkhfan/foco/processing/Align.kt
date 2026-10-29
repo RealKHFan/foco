@@ -381,7 +381,4 @@ object Aligner {
             det(copy) / d
         }
     }
-
-    @Suppress("unused")
-    private fun clampInt(v: Int, lo: Int, hi: Int) = min(hi, max(lo, v))
 }

@@ -158,12 +158,23 @@ class MediaRepository(private val context: Context) {
         if (paths.isNotEmpty()) runCatching { MediaScannerConnection.scanFile(context, paths.toTypedArray(), null, null) }
     }
 
-    private fun listCameraFolder(): List<FolderFile> = runCatching {
-        @Suppress("DEPRECATION")
-        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera")
-        dir.listFiles()?.filter { it.isFile && LatestPicker.isCameraMedia(it.name) }
+    @Volatile private var listedStamp = Long.MIN_VALUE
+
+    /**
+     * Files in the camera folder, or nothing if the folder hasn't changed since the last look: with thousands of
+     * photos, listing it means thousands of file checks, and a folder's time changes whenever a file is added,
+     * renamed or removed in it.
+     */
+    internal fun listCameraFolder(
+        @Suppress("DEPRECATION") dir: File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera"),
+    ): List<FolderFile> = runCatching {
+        val stamp = dir.lastModified()
+        if (stamp == listedStamp) return emptyList()
+        val files = dir.listFiles()?.filter { it.isFile && LatestPicker.isCameraMedia(it.name) }
             ?.map { FolderFile(it.absolutePath, it.lastModified()) }
             .orEmpty()
+        listedStamp = stamp
+        files
     }.getOrDefault(emptyList())
 
     private fun scanAndGet(path: String): MediaItem? {
@@ -187,8 +198,6 @@ class MediaRepository(private val context: Context) {
 
     fun thumbnail(item: MediaItem, sizePx: Int): Bitmap? =
         runCatching { resolver.loadThumbnail(item.uri, Size(sizePx, sizePx), null) }.getOrNull()
-
-    fun delete(item: MediaItem): Boolean = runCatching { resolver.delete(item.uri, null, null) > 0 }.getOrDefault(false)
 
     sealed class Removal {
         data object Done : Removal()
@@ -224,16 +233,29 @@ class MediaRepository(private val context: Context) {
     fun stripDeviceInfo(item: MediaItem) {
         if (item.isVideo || item.mimeType != "image/jpeg") return
         runCatching {
-            resolver.openFileDescriptor(item.uri, "rw")?.use { pfd ->
-                val exif = ExifInterface(pfd.fileDescriptor)
-                listOf(
-                    ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, ExifInterface.TAG_SOFTWARE,
-                    ExifInterface.TAG_LENS_MAKE, ExifInterface.TAG_LENS_MODEL, ExifInterface.TAG_LENS_SERIAL_NUMBER,
-                    ExifInterface.TAG_BODY_SERIAL_NUMBER, ExifInterface.TAG_CAMERA_OWNER_NAME,
-                    ExifInterface.TAG_IMAGE_UNIQUE_ID,
-                ).forEach { exif.setAttribute(it, null) }
-                exif.saveAttributes()
-            }
+            resolver.openFileDescriptor(item.uri, "rw")?.use { pfd -> strip(ExifInterface(pfd.fileDescriptor)) }
         }
     }
+
+    /** The same for a photo another app asked for, before it's handed over. */
+    fun stripDeviceInfo(jpeg: File) {
+        runCatching { strip(ExifInterface(jpeg)) }
+    }
+
+    private fun strip(exif: ExifInterface) {
+        listOf(
+            ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, ExifInterface.TAG_SOFTWARE,
+            ExifInterface.TAG_LENS_MAKE, ExifInterface.TAG_LENS_MODEL, ExifInterface.TAG_LENS_SERIAL_NUMBER,
+            ExifInterface.TAG_BODY_SERIAL_NUMBER, ExifInterface.TAG_CAMERA_OWNER_NAME,
+            ExifInterface.TAG_IMAGE_UNIQUE_ID,
+        ).forEach { exif.setAttribute(it, null) }
+        exif.saveAttributes()
+    }
+
+    /** True if [uri] is one of Foco's own photos/videos in the media index. */
+    fun ownedByFoco(uri: Uri): Boolean = uri.authority == MediaStore.AUTHORITY && runCatching {
+        resolver.query(uri, arrayOf(MediaStore.MediaColumns.OWNER_PACKAGE_NAME), null, null, null)?.use { c ->
+            c.moveToFirst() && c.getString(0) == context.packageName
+        } ?: false
+    }.getOrDefault(false)
 }

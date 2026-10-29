@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -68,7 +69,9 @@ private fun iconChoice(description: String, icon: ImageVector, enabled: Boolean 
     Choice(description, enabled) { content, _ -> Icon(icon, null, tint = content) }
 
 private fun textChoice(description: String, text: String, enabled: Boolean = true) =
-    Choice(description, enabled) { content, _ -> Text(text, color = content, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+    Choice(description, enabled) { content, _ ->
+        Text(text, color = content, fontSize = 12.dp.glyphSp(), fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+    }
 
 /** "Photo settings" / "Video settings" sheet with General and Pro tabs, like Pixel Camera. */
 @Composable
@@ -172,7 +175,8 @@ class RowSpec(
 @Composable
 private fun SettingRow(row: RowSpec, onSelect: (Int) -> Unit) {
     val primary = MaterialTheme.colorScheme.primary
-    Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+    // At least 48 dp; taller with large text so the chosen value (e.g. "12MP") isn't cut off.
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(row.label, color = Color.White, fontSize = 12.sp)
             Text(
